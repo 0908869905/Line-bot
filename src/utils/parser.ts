@@ -39,6 +39,11 @@ export function parseMessage(text: string): ParseResult {
     }
   }
 
+  // 收到指令
+  if (trimmed === "收到") {
+    return { type: "receive" };
+  }
+
   // 結算指令
   if (trimmed === "結算") {
     return { type: "settle" };

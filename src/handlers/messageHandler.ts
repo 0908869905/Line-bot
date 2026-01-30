@@ -10,6 +10,7 @@ import {
   isParent,
   getUnconfirmedExpenses,
   confirmExpenses,
+  markReceived,
 } from "../services/expenseService";
 import {
   expenseCreatedReply,
@@ -22,6 +23,7 @@ import {
   confirmReply,
   notParentReply,
   groupOnlyReply,
+  receiveReply,
 } from "../services/replyService";
 
 const PERIOD_RANGE_MAP = {
@@ -44,6 +46,7 @@ function getQuickReplyItems(isGroup: boolean): QuickReplyItem[] {
     items.push(
       { type: "action", action: { type: "message", label: "結算", text: "結算" } },
       { type: "action", action: { type: "message", label: "確認", text: "確認" } },
+      { type: "action", action: { type: "message", label: "收到", text: "收到" } },
     );
   }
 
@@ -193,6 +196,15 @@ export async function handleEvent(
       }
       const count = await confirmExpenses(groupId, parsed.targetName);
       replyText = confirmReply(count, parsed.targetName);
+      break;
+    }
+    case "receive": {
+      if (!isGroup || !groupId) {
+        replyText = groupOnlyReply();
+        break;
+      }
+      const count = await markReceived(userId, groupId);
+      replyText = receiveReply(count);
       break;
     }
     default: {

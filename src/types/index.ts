@@ -40,6 +40,10 @@ export type ParsedConfirm = {
   targetName?: string;
 };
 
+export type ParsedReceive = {
+  type: "receive";
+};
+
 export type ParsedUnknown = {
   type: "unknown";
 };
@@ -51,4 +55,5 @@ export type ParseResult =
   | ParsedBind
   | ParsedSettle
   | ParsedConfirm
+  | ParsedReceive
   | ParsedUnknown;

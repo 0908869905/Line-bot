@@ -106,7 +106,14 @@ export function confirmReply(count: number, targetName?: string): string {
       : "目前沒有未確認的支出";
   }
   const target = targetName ? ` ${targetName} 的` : "";
-  return `已確認${target} ${count} 筆支出`;
+  return `已確認${target} ${count} 筆支出\n孩子請輸入「收到」確認收款`;
+}
+
+export function receiveReply(count: number): string {
+  if (count === 0) {
+    return "目前沒有待確認收款的項目";
+  }
+  return `已確認收到 ${count} 筆款項`;
 }
 
 export function notParentReply(): string {
@@ -138,6 +145,7 @@ export function helpReply(): string {
     "  結算 → 查看未確認支出",
     "  確認 → 家長確認全部已付款",
     "  確認 小明 → 確認指定人的款項",
+    "  收到 → 孩子確認已收到款項",
   ].join("\n");
 }
 

@@ -150,3 +150,22 @@ export async function confirmExpenses(
 
   return result.count;
 }
+
+export async function markReceived(lineUserId: string, lineGroupId: string) {
+  const user = await prisma.user.findUnique({ where: { lineUserId } });
+  if (!user) return 0;
+  const group = await prisma.group.findUnique({ where: { lineGroupId } });
+  if (!group) return 0;
+
+  const result = await prisma.expense.updateMany({
+    where: {
+      userId: user.id,
+      groupId: group.id,
+      confirmed: true,
+      received: false,
+    },
+    data: { received: true, receivedAt: new Date() },
+  });
+
+  return result.count;
+}

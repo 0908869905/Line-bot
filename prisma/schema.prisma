@@ -41,6 +41,8 @@ model Expense {
   note        String    @default("")
   confirmed   Boolean   @default(false)
   confirmedAt DateTime?
+  received    Boolean   @default(false)
+  receivedAt  DateTime?
   createdAt   DateTime  @default(now())
   userId      Int
   user        User      @relation(fields: [userId], references: [id])
