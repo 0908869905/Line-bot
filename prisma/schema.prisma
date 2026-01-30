@@ -7,21 +7,45 @@ datasource db {
 }
 
 model User {
-  id          Int       @id @default(autoincrement())
-  lineUserId  String    @unique
+  id          Int          @id @default(autoincrement())
+  lineUserId  String       @unique
   displayName String?
   expenses    Expense[]
-  createdAt   DateTime  @default(now())
+  memberships Membership[]
+  createdAt   DateTime     @default(now())
+}
+
+model Group {
+  id          Int          @id @default(autoincrement())
+  lineGroupId String       @unique
+  memberships Membership[]
+  expenses    Expense[]
+  createdAt   DateTime     @default(now())
+}
+
+model Membership {
+  id      Int    @id @default(autoincrement())
+  role    String // "parent" or "child"
+  userId  Int
+  user    User   @relation(fields: [userId], references: [id])
+  groupId Int
+  group   Group  @relation(fields: [groupId], references: [id])
+
+  @@unique([userId, groupId])
 }
 
 model Expense {
-  id        Int      @id @default(autoincrement())
-  amount    Int
-  category  String   @default("其他")
-  note      String   @default("")
-  createdAt DateTime @default(now())
-  userId    Int
-  user      User     @relation(fields: [userId], references: [id])
+  id          Int       @id @default(autoincrement())
+  amount      Int
+  category    String    @default("其他")
+  note        String    @default("")
+  confirmed   Boolean   @default(false)
+  confirmedAt DateTime?
+  createdAt   DateTime  @default(now())
+  userId      Int
+  user        User      @relation(fields: [userId], references: [id])
+  groupId     Int?
+  group       Group?    @relation(fields: [groupId], references: [id])
 
   @@index([userId, createdAt])
 }

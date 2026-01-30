@@ -11,6 +11,14 @@ const QUERY_MAP: Record<string, "today" | "week" | "month"> = {
 
 const DELETE_KEYWORDS = ["刪除"];
 
+const BIND_ROLE_MAP: Record<string, "parent" | "child"> = {
+  家長: "parent",
+  媽媽: "parent",
+  爸爸: "parent",
+  孩子: "child",
+  小孩: "child",
+};
+
 function matchCategory(text: string): Category {
   for (const cat of CATEGORIES) {
     if (text.includes(cat)) return cat;
@@ -20,6 +28,28 @@ function matchCategory(text: string): Category {
 
 export function parseMessage(text: string): ParseResult {
   const trimmed = text.trim();
+
+  // 綁定指令: "綁定 家長" / "綁定 孩子"
+  const bindMatch = trimmed.match(/^綁定\s*(.+)/);
+  if (bindMatch) {
+    const roleText = bindMatch[1].trim();
+    const role = BIND_ROLE_MAP[roleText];
+    if (role) {
+      return { type: "bind", role };
+    }
+  }
+
+  // 結算指令
+  if (trimmed === "結算") {
+    return { type: "settle" };
+  }
+
+  // 確認指令: "確認" 或 "確認 小明"
+  const confirmMatch = trimmed.match(/^確認(?:\s+(.+))?$/);
+  if (confirmMatch) {
+    const targetName = confirmMatch[1]?.trim();
+    return { type: "confirm", targetName };
+  }
 
   // 查詢指令
   for (const [keyword, period] of Object.entries(QUERY_MAP)) {

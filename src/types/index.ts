@@ -26,6 +26,20 @@ export type ParsedDelete = {
   type: "delete";
 };
 
+export type ParsedBind = {
+  type: "bind";
+  role: "parent" | "child";
+};
+
+export type ParsedSettle = {
+  type: "settle";
+};
+
+export type ParsedConfirm = {
+  type: "confirm";
+  targetName?: string;
+};
+
 export type ParsedUnknown = {
   type: "unknown";
 };
@@ -34,4 +48,7 @@ export type ParseResult =
   | ParsedExpense
   | ParsedQuery
   | ParsedDelete
+  | ParsedBind
+  | ParsedSettle
+  | ParsedConfirm
   | ParsedUnknown;

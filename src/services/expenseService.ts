@@ -9,16 +9,39 @@ async function getOrCreateUser(lineUserId: string, displayName?: string) {
   });
 }
 
+export async function getOrCreateGroup(lineGroupId: string) {
+  return prisma.group.upsert({
+    where: { lineGroupId },
+    update: {},
+    create: { lineGroupId },
+  });
+}
+
 export async function createExpense(
   lineUserId: string,
   amount: number,
   category: Category,
   note: string,
-  displayName?: string
+  displayName?: string,
+  lineGroupId?: string
 ) {
   const user = await getOrCreateUser(lineUserId, displayName);
+
+  let groupId: number | undefined;
+  if (lineGroupId) {
+    const group = await getOrCreateGroup(lineGroupId);
+    groupId = group.id;
+  }
+
   return prisma.expense.create({
-    data: { amount, category, note, userId: user.id },
+    data: {
+      amount,
+      category,
+      note,
+      userId: user.id,
+      groupId,
+      confirmed: !lineGroupId, // 個人聊天自動確認，群組預設未確認
+    },
   });
 }
 
@@ -48,4 +71,82 @@ export async function deleteLastExpense(lineUserId: string) {
   if (!last) return null;
   await prisma.expense.delete({ where: { id: last.id } });
   return last;
+}
+
+export async function bindRole(
+  lineUserId: string,
+  lineGroupId: string,
+  role: "parent" | "child",
+  displayName?: string
+) {
+  const user = await getOrCreateUser(lineUserId, displayName);
+  const group = await getOrCreateGroup(lineGroupId);
+
+  return prisma.membership.upsert({
+    where: { userId_groupId: { userId: user.id, groupId: group.id } },
+    update: { role },
+    create: { userId: user.id, groupId: group.id, role },
+  });
+}
+
+export async function isParent(
+  lineUserId: string,
+  lineGroupId: string
+): Promise<boolean> {
+  const user = await prisma.user.findUnique({ where: { lineUserId } });
+  if (!user) return false;
+  const group = await prisma.group.findUnique({
+    where: { lineGroupId },
+  });
+  if (!group) return false;
+  const membership = await prisma.membership.findUnique({
+    where: { userId_groupId: { userId: user.id, groupId: group.id } },
+  });
+  return membership?.role === "parent";
+}
+
+export async function getUnconfirmedExpenses(lineGroupId: string) {
+  const group = await prisma.group.findUnique({
+    where: { lineGroupId },
+  });
+  if (!group) return [];
+
+  return prisma.expense.findMany({
+    where: {
+      groupId: group.id,
+      confirmed: false,
+    },
+    include: { user: true },
+    orderBy: { createdAt: "asc" },
+  });
+}
+
+export async function confirmExpenses(
+  lineGroupId: string,
+  targetDisplayName?: string
+) {
+  const group = await prisma.group.findUnique({
+    where: { lineGroupId },
+  });
+  if (!group) return 0;
+
+  const where: {
+    groupId: number;
+    confirmed: boolean;
+    user?: { displayName: string };
+  } = {
+    groupId: group.id,
+    confirmed: false,
+  };
+
+  if (targetDisplayName) {
+    where.user = { displayName: targetDisplayName };
+  }
+
+  const result = await prisma.expense.updateMany({
+    where,
+    data: { confirmed: true, confirmedAt: new Date() },
+  });
+
+  return result.count;
 }
