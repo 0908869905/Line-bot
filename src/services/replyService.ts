@@ -1,0 +1,77 @@
+import { Expense } from "@prisma/client";
+import { formatDate } from "../utils/date";
+
+export function expenseCreatedReply(
+  amount: number,
+  category: string,
+  note: string
+): string {
+  const parts = [`記帳成功！`, `金額：$${amount}`, `分類：${category}`];
+  if (note) parts.push(`備註：${note}`);
+  return parts.join("\n");
+}
+
+export function querySummaryReply(
+  periodLabel: string,
+  expenses: Expense[]
+): string {
+  if (expenses.length === 0) {
+    return `${periodLabel}還沒有任何花費紀錄 📭`;
+  }
+
+  const total = expenses.reduce((sum, e) => sum + e.amount, 0);
+
+  // 依分類統計
+  const byCategory: Record<string, number> = {};
+  for (const e of expenses) {
+    byCategory[e.category] = (byCategory[e.category] || 0) + e.amount;
+  }
+
+  const lines = [`${periodLabel}花費統計`, `────────────`];
+  for (const [cat, amt] of Object.entries(byCategory)) {
+    lines.push(`${cat}：$${amt}`);
+  }
+  lines.push(`────────────`);
+  lines.push(`總計：$${total}（${expenses.length} 筆）`);
+
+  // 明細
+  lines.push("", "明細：");
+  for (const e of expenses) {
+    const date = formatDate(e.createdAt);
+    const notePart = e.note ? ` (${e.note})` : "";
+    lines.push(`  ${date} ${e.category} $${e.amount}${notePart}`);
+  }
+
+  return lines.join("\n");
+}
+
+export function deleteReply(expense: Expense | null): string {
+  if (!expense) {
+    return "沒有可刪除的紀錄";
+  }
+  const notePart = expense.note ? ` (${expense.note})` : "";
+  return `已刪除最後一筆：${expense.category} $${expense.amount}${notePart}`;
+}
+
+export function helpReply(): string {
+  return [
+    "使用說明",
+    "────────────",
+    "記帳：直接輸入金額和說明",
+    "  例：50 午餐",
+    "  例：記帳 120 晚餐 牛排",
+    "",
+    "查詢：",
+    "  今日 / 今天 → 今日統計",
+    "  本週 / 這週 → 本週統計",
+    "  本月 / 這個月 → 本月統計",
+    "",
+    "刪除：輸入「刪除」移除最後一筆",
+  ].join("\n");
+}
+
+export const PERIOD_LABELS: Record<string, string> = {
+  today: "今日",
+  week: "本週",
+  month: "本月",
+};
