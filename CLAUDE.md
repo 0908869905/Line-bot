@@ -2,7 +2,7 @@
 
 ## 專案概述
 - **類型**：LINE Messaging API 報帳機器人
-- **技術棧**：TypeScript + Express 5 + Prisma 7 + SQLite + @line/bot-sdk v10
+- **技術棧**：TypeScript + Express 5 + Prisma 7 + PostgreSQL (Supabase) + @line/bot-sdk v10
 - **部署**：Render (https://line-bot-4hdz.onrender.com)
 - **Node 環境**：ES2020 target, CommonJS module
 
@@ -56,12 +56,13 @@ npm run start
 - `LINE_CHANNEL_SECRET` - LINE Bot 頻道密鑰
 - `LINE_CHANNEL_ACCESS_TOKEN` - LINE Bot 存取令牌
 - `PORT` - 伺服器端口（預設 3000）
-- `DATABASE_URL` - SQLite 資料庫路徑（預設 file:./dev.db）
+- `DATABASE_URL` - Supabase PostgreSQL 連線字串（pooler transaction mode, port 6543）
+- `DIRECT_URL` - Supabase PostgreSQL 直連字串（port 5432，供 Prisma CLI 使用）
 
 ## 開發規範
 - LINE middleware 必須在 Express JSON parser 之前執行（SDK 自行解析 body）
 - replyToken 有時效性，需盡快回覆
-- Prisma schema 修改後執行 `npx prisma db push`（使用 driver adapter 模式，不使用 migrate）
+- Prisma schema 修改後執行 `npx prisma db push`（透過 DIRECT_URL 直連 Supabase）
 - 部署前必須 `npm run build` 確認編譯通過
 
 ## 群組功能
@@ -74,4 +75,5 @@ npm run start
 ## 注意事項
 - Webhook URL: https://line-bot-4hdz.onrender.com/webhook
 - Render 免費方案會自動休眠，首次請求可能延遲
-- SQLite 資料庫檔案在 Render 重新部署時會重置（未來可遷移 PostgreSQL）
+- 資料庫已遷移至 Supabase PostgreSQL（專案 ID: pzlzvyyjxkerrumzotno, 區域: ap-northeast-1）
+- Render 需設定 DATABASE_URL 和 DIRECT_URL 環境變數
