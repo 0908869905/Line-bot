@@ -64,13 +64,75 @@ export async function queryExpenses(
 export async function deleteLastExpense(lineUserId: string) {
   const user = await prisma.user.findUnique({ where: { lineUserId } });
   if (!user) return null;
-  const last = await prisma.expense.findFirst({
-    where: { userId: user.id },
-    orderBy: { createdAt: "desc" },
+
+  return prisma.$transaction(async (tx) => {
+    const last = await tx.expense.findFirst({
+      where: { userId: user.id },
+      orderBy: { createdAt: "desc" },
+    });
+    if (!last) return null;
+    await tx.expense.delete({ where: { id: last.id } });
+    return last;
   });
-  if (!last) return null;
-  await prisma.expense.delete({ where: { id: last.id } });
-  return last;
+}
+
+export async function editLastExpense(lineUserId: string, newAmount: number) {
+  const user = await prisma.user.findUnique({ where: { lineUserId } });
+  if (!user) return null;
+
+  return prisma.$transaction(async (tx) => {
+    const last = await tx.expense.findFirst({
+      where: { userId: user.id },
+      orderBy: { createdAt: "desc" },
+    });
+    if (!last) return null;
+    return tx.expense.update({
+      where: { id: last.id },
+      data: { amount: newAmount },
+    });
+  });
+}
+
+export async function getCategoryStats(
+  lineUserId: string,
+  start: Date,
+  end: Date,
+  category?: string
+) {
+  const user = await prisma.user.findUnique({ where: { lineUserId } });
+  if (!user) return { byCategory: {}, total: 0, count: 0, expenses: [] };
+
+  const where: {
+    userId: number;
+    createdAt: { gte: Date; lt: Date };
+    category?: string;
+  } = {
+    userId: user.id,
+    createdAt: { gte: start, lt: end },
+  };
+
+  if (category) {
+    where.category = category;
+  }
+
+  const expenses = await prisma.expense.findMany({
+    where,
+    orderBy: { createdAt: "asc" },
+  });
+
+  const byCategory: Record<string, { amount: number; count: number }> = {};
+  let total = 0;
+
+  for (const e of expenses) {
+    if (!byCategory[e.category]) {
+      byCategory[e.category] = { amount: 0, count: 0 };
+    }
+    byCategory[e.category].amount += e.amount;
+    byCategory[e.category].count += 1;
+    total += e.amount;
+  }
+
+  return { byCategory, total, count: expenses.length, expenses };
 }
 
 export async function bindRole(

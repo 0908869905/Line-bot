@@ -44,6 +44,16 @@ export type ParsedReceive = {
   type: "receive";
 };
 
+export type ParsedEdit = {
+  type: "edit";
+  amount: number;
+};
+
+export type ParsedStats = {
+  type: "stats";
+  category?: Category;
+};
+
 export type ParsedUnknown = {
   type: "unknown";
 };
@@ -56,4 +66,6 @@ export type ParseResult =
   | ParsedSettle
   | ParsedConfirm
   | ParsedReceive
+  | ParsedEdit
+  | ParsedStats
   | ParsedUnknown;

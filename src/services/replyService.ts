@@ -116,6 +116,46 @@ export function receiveReply(count: number): string {
   return `已確認收到 ${count} 筆款項`;
 }
 
+export function editReply(expense: Expense | null, newAmount: number): string {
+  if (!expense) {
+    return "沒有可修改的紀錄";
+  }
+  return `已修改最後一筆：${expense.category} $${expense.amount}（原金額 → $${newAmount}）`;
+}
+
+export function statsReply(
+  byCategory: Record<string, { amount: number; count: number }>,
+  total: number,
+  count: number,
+  category?: string
+): string {
+  if (count === 0) {
+    return category
+      ? `本月沒有「${category}」的花費紀錄`
+      : "本月還沒有任何花費紀錄";
+  }
+
+  if (category) {
+    const data = byCategory[category];
+    if (!data) return `本月沒有「${category}」的花費紀錄`;
+    return [
+      `本月「${category}」統計`,
+      `────────────`,
+      `金額：$${data.amount}`,
+      `筆數：${data.count} 筆`,
+    ].join("\n");
+  }
+
+  const lines = ["本月分類統計", "────────────"];
+  for (const [cat, data] of Object.entries(byCategory)) {
+    const pct = total > 0 ? Math.round((data.amount / total) * 100) : 0;
+    lines.push(`${cat}：$${data.amount}（${pct}%，${data.count} 筆）`);
+  }
+  lines.push("────────────");
+  lines.push(`總計：$${total}（${count} 筆）`);
+  return lines.join("\n");
+}
+
 export function notParentReply(): string {
   return "只有「家長」角色才能確認付款\n請先輸入「綁定 家長」設定角色";
 }
@@ -137,7 +177,14 @@ export function helpReply(): string {
     "  本週 / 這週 → 本週統計",
     "  本月 / 這個月 → 本月統計",
     "",
+    "修改：",
+    "  修改 80 → 改最後一筆金額為 80",
+    "",
     "刪除：輸入「刪除」移除最後一筆",
+    "",
+    "統計：",
+    "  統計 → 本月各分類佔比",
+    "  統計 午餐 → 查看午餐明細",
     "",
     "群組功能：",
     "  綁定 家長 → 設定為家長角色",

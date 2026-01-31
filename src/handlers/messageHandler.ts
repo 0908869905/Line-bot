@@ -6,6 +6,8 @@ import {
   createExpense,
   queryExpenses,
   deleteLastExpense,
+  editLastExpense,
+  getCategoryStats,
   bindRole,
   isParent,
   getUnconfirmedExpenses,
@@ -16,6 +18,8 @@ import {
   expenseCreatedReply,
   querySummaryReply,
   deleteReply,
+  editReply,
+  statsReply,
   helpReply,
   PERIOD_LABELS,
   bindReply,
@@ -25,6 +29,7 @@ import {
   groupOnlyReply,
   receiveReply,
 } from "../services/replyService";
+import { buildQueryFlex } from "../services/flexService";
 
 const PERIOD_RANGE_MAP = {
   today: getTodayRange,
@@ -39,6 +44,7 @@ function getQuickReplyItems(isGroup: boolean): QuickReplyItem[] {
     { type: "action", action: { type: "message", label: "今日", text: "今日" } },
     { type: "action", action: { type: "message", label: "本週", text: "本週" } },
     { type: "action", action: { type: "message", label: "本月", text: "本月" } },
+    { type: "action", action: { type: "message", label: "統計", text: "統計" } },
     { type: "action", action: { type: "message", label: "刪除", text: "刪除" } },
   ];
 
@@ -55,6 +61,18 @@ function getQuickReplyItems(isGroup: boolean): QuickReplyItem[] {
   );
 
   return items;
+}
+
+async function safeReply(
+  client: messagingApi.MessagingApiClient,
+  replyToken: string,
+  messages: messagingApi.Message[]
+): Promise<void> {
+  try {
+    await client.replyMessage({ replyToken, messages });
+  } catch (err) {
+    console.error("replyMessage failed:", err);
+  }
 }
 
 async function getDisplayName(
@@ -80,37 +98,31 @@ export async function handleEvent(
 ): Promise<void> {
   // join 事件：Bot 被加入群組
   if (event.type === "join") {
-    await client.replyMessage({
-      replyToken: event.replyToken,
-      messages: [
-        {
-          type: "text",
-          text: [
-            "大家好！我是記帳小幫手",
-            "",
-            "請先設定角色：",
-            "  輸入「綁定 家長」或「綁定 孩子」",
-            "",
-            "設定完成後即可開始記帳！",
-            "輸入「說明」查看完整功能",
-          ].join("\n"),
-        },
-      ],
-    });
+    await safeReply(client, event.replyToken, [
+      {
+        type: "text",
+        text: [
+          "大家好！我是記帳小幫手",
+          "",
+          "請先設定角色：",
+          "  輸入「綁定 家長」或「綁定 孩子」",
+          "",
+          "設定完成後即可開始記帳！",
+          "輸入「說明」查看完整功能",
+        ].join("\n"),
+      },
+    ]);
     return;
   }
 
   // follow 事件：歡迎訊息
   if (event.type === "follow") {
-    await client.replyMessage({
-      replyToken: event.replyToken,
-      messages: [
-        {
-          type: "text",
-          text: `歡迎使用記帳小幫手！\n\n${helpReply()}`,
-        },
-      ],
-    });
+    await safeReply(client, event.replyToken, [
+      {
+        type: "text",
+        text: `歡迎使用記帳小幫手！\n\n${helpReply()}`,
+      },
+    ]);
     return;
   }
 
@@ -134,7 +146,7 @@ export async function handleEvent(
         : undefined;
 
   const parsed = parseMessage(textMessage.text);
-  let replyText: string;
+  const replyMessages: messagingApi.Message[] = [];
 
   switch (parsed.type) {
     case "expense": {
@@ -147,81 +159,114 @@ export async function handleEvent(
         displayName,
         groupId
       );
-      replyText = expenseCreatedReply(
-        parsed.amount,
-        parsed.category,
-        parsed.note
-      );
+      replyMessages.push({
+        type: "text",
+        text: expenseCreatedReply(parsed.amount, parsed.category, parsed.note),
+      });
       break;
     }
     case "query": {
       const { start, end } = PERIOD_RANGE_MAP[parsed.period]();
       const expenses = await queryExpenses(userId, start, end);
-      replyText = querySummaryReply(PERIOD_LABELS[parsed.period], expenses);
+      const flexMsg = buildQueryFlex(PERIOD_LABELS[parsed.period], expenses);
+      if (flexMsg) {
+        replyMessages.push(flexMsg);
+      } else {
+        replyMessages.push({
+          type: "text",
+          text: querySummaryReply(PERIOD_LABELS[parsed.period], expenses),
+        });
+      }
       break;
     }
     case "delete": {
       const deleted = await deleteLastExpense(userId);
-      replyText = deleteReply(deleted);
+      replyMessages.push({ type: "text", text: deleteReply(deleted) });
+      break;
+    }
+    case "edit": {
+      const oldExpense = await queryExpenses(userId, new Date(0), new Date());
+      const lastExpense = oldExpense.length > 0 ? oldExpense[oldExpense.length - 1] : null;
+      const updated = await editLastExpense(userId, parsed.amount);
+      replyMessages.push({
+        type: "text",
+        text: editReply(lastExpense, updated ? parsed.amount : 0),
+      });
+      break;
+    }
+    case "stats": {
+      const { start, end } = getMonthRange();
+      const { byCategory, total, count } = await getCategoryStats(
+        userId,
+        start,
+        end,
+        parsed.category
+      );
+      replyMessages.push({
+        type: "text",
+        text: statsReply(byCategory, total, count, parsed.category),
+      });
       break;
     }
     case "bind": {
       if (!isGroup || !groupId) {
-        replyText = groupOnlyReply();
+        replyMessages.push({ type: "text", text: groupOnlyReply() });
         break;
       }
       const displayName = await getDisplayName(client, userId, groupId);
       await bindRole(userId, groupId, parsed.role, displayName);
-      replyText = bindReply(parsed.role, displayName || "你");
+      replyMessages.push({
+        type: "text",
+        text: bindReply(parsed.role, displayName || "你"),
+      });
       break;
     }
     case "settle": {
       if (!isGroup || !groupId) {
-        replyText = groupOnlyReply();
+        replyMessages.push({ type: "text", text: groupOnlyReply() });
         break;
       }
       const expenses = await getUnconfirmedExpenses(groupId);
-      replyText = settleReply(expenses);
+      replyMessages.push({ type: "text", text: settleReply(expenses) });
       break;
     }
     case "confirm": {
       if (!isGroup || !groupId) {
-        replyText = groupOnlyReply();
+        replyMessages.push({ type: "text", text: groupOnlyReply() });
         break;
       }
       const parentCheck = await isParent(userId, groupId);
       if (!parentCheck) {
-        replyText = notParentReply();
+        replyMessages.push({ type: "text", text: notParentReply() });
         break;
       }
       const count = await confirmExpenses(groupId, parsed.targetName);
-      replyText = confirmReply(count, parsed.targetName);
+      replyMessages.push({
+        type: "text",
+        text: confirmReply(count, parsed.targetName),
+      });
       break;
     }
     case "receive": {
       if (!isGroup || !groupId) {
-        replyText = groupOnlyReply();
+        replyMessages.push({ type: "text", text: groupOnlyReply() });
         break;
       }
       const count = await markReceived(userId, groupId);
-      replyText = receiveReply(count);
+      replyMessages.push({ type: "text", text: receiveReply(count) });
       break;
     }
     default: {
-      replyText = helpReply();
+      replyMessages.push({ type: "text", text: helpReply() });
     }
   }
 
-  await client.replyMessage({
-    replyToken,
-    messages: [
-      {
-        type: "text",
-        text: replyText,
-        quickReply: {
-          items: getQuickReplyItems(isGroup),
-        },
-      },
-    ],
-  });
+  // 為最後一則文字訊息加上 quickReply
+  const lastTextIdx = replyMessages.map((m) => m.type).lastIndexOf("text");
+  if (lastTextIdx >= 0) {
+    const lastMsg = replyMessages[lastTextIdx] as messagingApi.TextMessage;
+    lastMsg.quickReply = { items: getQuickReplyItems(isGroup) };
+  }
+
+  await safeReply(client, replyToken, replyMessages);
 }

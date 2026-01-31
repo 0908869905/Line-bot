@@ -1,5 +1,12 @@
 import { CATEGORIES, Category, ParseResult } from "../types";
 
+const AMOUNT_MIN = 1;
+const AMOUNT_MAX = 100000;
+
+function validateAmount(amount: number): boolean {
+  return amount >= AMOUNT_MIN && amount <= AMOUNT_MAX;
+}
+
 const QUERY_MAP: Record<string, "today" | "week" | "month"> = {
   今日: "today",
   今天: "today",
@@ -68,11 +75,34 @@ export function parseMessage(text: string): ParseResult {
     return { type: "delete" };
   }
 
+  // 修改/編輯指令: "修改 80" 或 "編輯 80"
+  const editMatch = trimmed.match(/^(?:修改|編輯)\s+(\d+)$/);
+  if (editMatch) {
+    const amount = parseInt(editMatch[1], 10);
+    if (validateAmount(amount)) {
+      return { type: "edit", amount };
+    }
+  }
+
+  // 統計指令: "統計" 或 "統計 午餐"
+  const statsMatch = trimmed.match(/^統計(?:\s+(.+))?$/);
+  if (statsMatch) {
+    const catText = statsMatch[1]?.trim();
+    if (catText) {
+      const category = CATEGORIES.find((c) => c === catText);
+      if (category) {
+        return { type: "stats", category };
+      }
+    }
+    return { type: "stats" };
+  }
+
   // 記帳格式: "50 午餐" 或 "記帳 120 晚餐 牛排"
   // 模式 1: "記帳 金額 [分類] [備註]"
   const withPrefix = trimmed.match(/^記帳\s+(\d+)\s*(.*)/);
   if (withPrefix) {
     const amount = parseInt(withPrefix[1], 10);
+    if (!validateAmount(amount)) return { type: "unknown" };
     const rest = withPrefix[2].trim();
     const category = matchCategory(rest);
     const note = rest
@@ -85,6 +115,7 @@ export function parseMessage(text: string): ParseResult {
   const direct = trimmed.match(/^(\d+)\s+(.*)/);
   if (direct) {
     const amount = parseInt(direct[1], 10);
+    if (!validateAmount(amount)) return { type: "unknown" };
     const rest = direct[2].trim();
     const category = matchCategory(rest);
     const note = rest
@@ -95,9 +126,11 @@ export function parseMessage(text: string): ParseResult {
 
   // 純數字也視為記帳
   if (/^\d+$/.test(trimmed)) {
+    const amount = parseInt(trimmed, 10);
+    if (!validateAmount(amount)) return { type: "unknown" };
     return {
       type: "expense",
-      amount: parseInt(trimmed, 10),
+      amount,
       category: "其他",
       note: "",
     };
