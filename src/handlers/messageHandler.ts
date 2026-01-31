@@ -134,114 +134,123 @@ async function handlePostback(
   const action = params.get("action");
   const replyMessages: messagingApi.Message[] = [];
 
-  switch (action) {
-    case "query": {
-      const period = params.get("period") as "today" | "week" | "month";
-      if (!period || !PERIOD_RANGE_MAP[period]) break;
-      const { start, end } = PERIOD_RANGE_MAP[period]();
-      const expenses = await queryExpenses(userId, start, end);
-      setQueryCache(userId, expenses);
-      const flexMsg = buildQueryFlex(PERIOD_LABELS[period], expenses);
-      if (flexMsg) {
-        replyMessages.push(flexMsg);
-      } else {
+  try {
+    switch (action) {
+      case "query": {
+        const period = params.get("period") as "today" | "week" | "month";
+        if (!period || !PERIOD_RANGE_MAP[period]) break;
+        const { start, end } = PERIOD_RANGE_MAP[period]();
+        const expenses = await queryExpenses(userId, start, end);
+        setQueryCache(userId, expenses);
+        const flexMsg = buildQueryFlex(PERIOD_LABELS[period], expenses);
+        if (flexMsg) {
+          replyMessages.push(flexMsg);
+        } else {
+          replyMessages.push({
+            type: "text",
+            text: querySummaryReply(PERIOD_LABELS[period], expenses),
+          });
+        }
+        break;
+      }
+      case "stats": {
+        const { start, end } = getMonthRange();
+        const { byCategory, total, count } = await getCategoryStats(userId, start, end);
         replyMessages.push({
           type: "text",
-          text: querySummaryReply(PERIOD_LABELS[period], expenses),
+          text: statsReply(byCategory, total, count),
         });
-      }
-      break;
-    }
-    case "stats": {
-      const { start, end } = getMonthRange();
-      const { byCategory, total, count } = await getCategoryStats(userId, start, end);
-      replyMessages.push({
-        type: "text",
-        text: statsReply(byCategory, total, count),
-      });
-      break;
-    }
-    case "help": {
-      replyMessages.push({ type: "text", text: helpReply() });
-      break;
-    }
-    case "settle": {
-      if (!isGroup || !groupId) {
-        replyMessages.push({ type: "text", text: groupOnlyReply() });
         break;
       }
-      const expenses = await getUnconfirmedExpenses(groupId);
-      const flexMsg = buildSettleFlex(expenses, groupId);
-      if (flexMsg) {
-        replyMessages.push(flexMsg);
-      } else {
-        replyMessages.push({ type: "text", text: "目前沒有未確認的支出" });
-      }
-      break;
-    }
-    case "select_category": {
-      const amount = parseInt(params.get("amount") || "0", 10);
-      const category = params.get("category") || "其他";
-      if (amount < 1 || amount > 100000) break;
-      const displayName = await getDisplayName(client, userId, groupId);
-      const expense = await createExpense(userId, amount, category as any, "", displayName, groupId);
-      replyMessages.push(buildExpenseCreatedFlex(expense));
-      break;
-    }
-    case "undo":
-    case "delete": {
-      const id = parseInt(params.get("id") || "0", 10);
-      if (!id) break;
-      const deleted = await deleteExpenseById(id, userId);
-      replyMessages.push({
-        type: "text",
-        text: deleted
-          ? `已${action === "undo" ? "撤銷" : "刪除"}：${deleted.category} $${deleted.amount}`
-          : "此筆紀錄已不存在",
-      });
-      break;
-    }
-    case "edit_confirm": {
-      const id = parseInt(params.get("id") || "0", 10);
-      const newAmount = parseInt(params.get("amount") || "0", 10);
-      if (!id || !newAmount) break;
-      const updated = await editExpenseById(id, userId, newAmount);
-      replyMessages.push({
-        type: "text",
-        text: updated ? `已修改為 $${newAmount}` : "此筆紀錄已不存在",
-      });
-      break;
-    }
-    case "confirm_user": {
-      if (!isGroup || !groupId) break;
-      const parentCheck = await isParent(userId, groupId);
-      if (!parentCheck) {
-        replyMessages.push({ type: "text", text: notParentReply() });
+      case "help": {
+        replyMessages.push({ type: "text", text: helpReply() });
         break;
       }
-      const targetUserId = params.get("userId") || "";
-      const cnt = await confirmExpensesByUser(targetUserId, groupId);
-      replyMessages.push({
-        type: "text",
-        text: cnt > 0
-          ? `已確認 ${cnt} 筆支出\n孩子請輸入「收到」確認收款`
-          : "沒有需要確認的支出",
-      });
-      break;
-    }
-    case "confirm_all": {
-      if (!isGroup || !groupId) break;
-      const parentCheck = await isParent(userId, groupId);
-      if (!parentCheck) {
-        replyMessages.push({ type: "text", text: notParentReply() });
+      case "settle": {
+        if (!isGroup || !groupId) {
+          replyMessages.push({ type: "text", text: groupOnlyReply() });
+          break;
+        }
+        const expenses = await getUnconfirmedExpenses(groupId);
+        const flexMsg = buildSettleFlex(expenses, groupId);
+        if (flexMsg) {
+          replyMessages.push(flexMsg);
+        } else {
+          replyMessages.push({ type: "text", text: "目前沒有未確認的支出" });
+        }
         break;
       }
-      const cnt = await confirmExpenses(groupId);
-      replyMessages.push({ type: "text", text: confirmReply(cnt) });
-      break;
+      case "select_category": {
+        const amount = parseInt(params.get("amount") || "0", 10);
+        const category = params.get("category") || "其他";
+        if (amount < 1 || amount > 100000) break;
+        const displayName = await getDisplayName(client, userId, groupId);
+        const expense = await createExpense(userId, amount, category as any, "", displayName, groupId);
+        replyMessages.push(buildExpenseCreatedFlex(expense));
+        break;
+      }
+      case "undo":
+      case "delete": {
+        const id = parseInt(params.get("id") || "0", 10);
+        if (!id) break;
+        const deleted = await deleteExpenseById(id, userId);
+        replyMessages.push({
+          type: "text",
+          text: deleted
+            ? `已${action === "undo" ? "撤銷" : "刪除"}：${deleted.category} $${deleted.amount}`
+            : "此筆紀錄已不存在",
+        });
+        break;
+      }
+      case "edit_confirm": {
+        const id = parseInt(params.get("id") || "0", 10);
+        const newAmount = parseInt(params.get("amount") || "0", 10);
+        if (!id || !newAmount) break;
+        const updated = await editExpenseById(id, userId, newAmount);
+        replyMessages.push({
+          type: "text",
+          text: updated ? `已修改為 $${newAmount}` : "此筆紀錄已不存在",
+        });
+        break;
+      }
+      case "confirm_user": {
+        if (!isGroup || !groupId) break;
+        const parentCheck = await isParent(userId, groupId);
+        if (!parentCheck) {
+          replyMessages.push({ type: "text", text: notParentReply() });
+          break;
+        }
+        const targetUserId = params.get("userId") || "";
+        const cnt = await confirmExpensesByUser(targetUserId, groupId);
+        replyMessages.push({
+          type: "text",
+          text: cnt > 0
+            ? `已確認 ${cnt} 筆支出\n孩子請輸入「收到」確認收款`
+            : "沒有需要確認的支出",
+        });
+        break;
+      }
+      case "confirm_all": {
+        if (!isGroup || !groupId) break;
+        const parentCheck = await isParent(userId, groupId);
+        if (!parentCheck) {
+          replyMessages.push({ type: "text", text: notParentReply() });
+          break;
+        }
+        const cnt = await confirmExpenses(groupId);
+        replyMessages.push({ type: "text", text: confirmReply(cnt) });
+        break;
+      }
+      default:
+        return;
     }
-    default:
-      return;
+  } catch (err) {
+    console.error("handlePostback error:", action, err);
+    replyMessages.length = 0;
+    replyMessages.push({
+      type: "text",
+      text: `處理失敗，請稍後再試\n(${err instanceof Error ? err.message : String(err)})`,
+    });
   }
 
   if (replyMessages.length === 0) return;
