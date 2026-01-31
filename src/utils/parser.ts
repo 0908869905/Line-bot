@@ -155,15 +155,13 @@ export function parseMessage(text: string): ParseResult {
     return { type: "expense", amount, category, note };
   }
 
-  // 純數字也視為記帳
+  // 純數字 → 兩步驟記帳（彈出分類選擇）
   if (/^\d+$/.test(trimmed)) {
     const amount = parseInt(trimmed, 10);
     if (!validateAmount(amount)) return { type: "unknown" };
     return {
-      type: "expense",
+      type: "amount_only",
       amount,
-      category: "其他",
-      note: "",
     };
   }
 

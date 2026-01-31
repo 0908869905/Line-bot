@@ -1,6 +1,7 @@
-import { WebhookEvent, MessageEvent, TextEventMessage } from "@line/bot-sdk";
+import { WebhookEvent, MessageEvent, TextEventMessage, PostbackEvent } from "@line/bot-sdk";
 import { messagingApi } from "@line/bot-sdk";
 import { parseMessage } from "../utils/parser";
+import { CATEGORIES } from "../types";
 import { getTodayRange, getWeekRange, getMonthRange } from "../utils/date";
 import {
   createExpense,
@@ -16,6 +17,7 @@ import {
   isParent,
   getUnconfirmedExpenses,
   confirmExpenses,
+  confirmExpensesByUser,
   markReceived,
 } from "../services/expenseService";
 import { setQueryCache, getFromCache } from "../services/queryCache";
@@ -28,13 +30,12 @@ import {
   helpReply,
   PERIOD_LABELS,
   bindReply,
-  settleReply,
   confirmReply,
   notParentReply,
   groupOnlyReply,
   receiveReply,
 } from "../services/replyService";
-import { buildQueryFlex } from "../services/flexService";
+import { buildQueryFlex, buildExpenseCreatedFlex, buildSettleFlex } from "../services/flexService";
 
 const PERIOD_RANGE_MAP = {
   today: getTodayRange,
@@ -46,26 +47,34 @@ type QuickReplyItem = messagingApi.QuickReplyItem;
 
 function getQuickReplyItems(isGroup: boolean): QuickReplyItem[] {
   const items: QuickReplyItem[] = [
-    { type: "action", action: { type: "message", label: "今日", text: "今日" } },
-    { type: "action", action: { type: "message", label: "本週", text: "本週" } },
-    { type: "action", action: { type: "message", label: "本月", text: "本月" } },
-    { type: "action", action: { type: "message", label: "統計", text: "統計" } },
+    { type: "action", action: { type: "postback", label: "今日", data: "action=query&period=today", displayText: "今日" } },
+    { type: "action", action: { type: "postback", label: "本週", data: "action=query&period=week", displayText: "本週" } },
+    { type: "action", action: { type: "postback", label: "本月", data: "action=query&period=month", displayText: "本月" } },
+    { type: "action", action: { type: "postback", label: "統計", data: "action=stats", displayText: "統計" } },
     { type: "action", action: { type: "message", label: "刪除", text: "刪除" } },
   ];
 
   if (isGroup) {
     items.push(
-      { type: "action", action: { type: "message", label: "結算", text: "結算" } },
+      { type: "action", action: { type: "postback", label: "結算", data: "action=settle", displayText: "結算" } },
       { type: "action", action: { type: "message", label: "確認", text: "確認" } },
       { type: "action", action: { type: "message", label: "收到", text: "收到" } },
     );
   }
 
   items.push(
-    { type: "action", action: { type: "message", label: "說明", text: "說明" } },
+    { type: "action", action: { type: "postback", label: "說明", data: "action=help", displayText: "說明" } },
   );
 
   return items;
+}
+
+function attachQuickReply(messages: messagingApi.Message[], isGroup: boolean) {
+  const lastTextIdx = messages.map((m) => m.type).lastIndexOf("text");
+  if (lastTextIdx >= 0) {
+    const lastMsg = messages[lastTextIdx] as messagingApi.TextMessage;
+    lastMsg.quickReply = { items: getQuickReplyItems(isGroup) };
+  }
 }
 
 async function safeReply(
@@ -96,6 +105,151 @@ async function getDisplayName(
     return undefined;
   }
 }
+
+function getSourceInfo(event: { source: WebhookEvent["source"] }) {
+  const userId = event.source?.userId;
+  const isGroup = event.source?.type === "group" || event.source?.type === "room";
+  const groupId =
+    event.source?.type === "group"
+      ? event.source.groupId
+      : event.source?.type === "room"
+        ? event.source.roomId
+        : undefined;
+  return { userId, isGroup, groupId };
+}
+
+// ─── Postback Event Handler ───
+
+async function handlePostback(
+  event: PostbackEvent,
+  client: messagingApi.MessagingApiClient
+): Promise<void> {
+  const replyToken = event.replyToken;
+  if (!replyToken) return;
+
+  const { userId, isGroup, groupId } = getSourceInfo(event);
+  if (!userId) return;
+
+  const params = new URLSearchParams(event.postback.data);
+  const action = params.get("action");
+  const replyMessages: messagingApi.Message[] = [];
+
+  switch (action) {
+    case "query": {
+      const period = params.get("period") as "today" | "week" | "month";
+      if (!period || !PERIOD_RANGE_MAP[period]) break;
+      const { start, end } = PERIOD_RANGE_MAP[period]();
+      const expenses = await queryExpenses(userId, start, end);
+      setQueryCache(userId, expenses);
+      const flexMsg = buildQueryFlex(PERIOD_LABELS[period], expenses);
+      if (flexMsg) {
+        replyMessages.push(flexMsg);
+      } else {
+        replyMessages.push({
+          type: "text",
+          text: querySummaryReply(PERIOD_LABELS[period], expenses),
+        });
+      }
+      break;
+    }
+    case "stats": {
+      const { start, end } = getMonthRange();
+      const { byCategory, total, count } = await getCategoryStats(userId, start, end);
+      replyMessages.push({
+        type: "text",
+        text: statsReply(byCategory, total, count),
+      });
+      break;
+    }
+    case "help": {
+      replyMessages.push({ type: "text", text: helpReply() });
+      break;
+    }
+    case "settle": {
+      if (!isGroup || !groupId) {
+        replyMessages.push({ type: "text", text: groupOnlyReply() });
+        break;
+      }
+      const expenses = await getUnconfirmedExpenses(groupId);
+      const flexMsg = buildSettleFlex(expenses, groupId);
+      if (flexMsg) {
+        replyMessages.push(flexMsg);
+      } else {
+        replyMessages.push({ type: "text", text: "目前沒有未確認的支出" });
+      }
+      break;
+    }
+    case "select_category": {
+      const amount = parseInt(params.get("amount") || "0", 10);
+      const category = params.get("category") || "其他";
+      if (amount < 1 || amount > 100000) break;
+      const displayName = await getDisplayName(client, userId, groupId);
+      const expense = await createExpense(userId, amount, category as any, "", displayName, groupId);
+      replyMessages.push(buildExpenseCreatedFlex(expense));
+      break;
+    }
+    case "undo":
+    case "delete": {
+      const id = parseInt(params.get("id") || "0", 10);
+      if (!id) break;
+      const deleted = await deleteExpenseById(id, userId);
+      replyMessages.push({
+        type: "text",
+        text: deleted
+          ? `已${action === "undo" ? "撤銷" : "刪除"}：${deleted.category} $${deleted.amount}`
+          : "此筆紀錄已不存在",
+      });
+      break;
+    }
+    case "edit_confirm": {
+      const id = parseInt(params.get("id") || "0", 10);
+      const newAmount = parseInt(params.get("amount") || "0", 10);
+      if (!id || !newAmount) break;
+      const updated = await editExpenseById(id, userId, newAmount);
+      replyMessages.push({
+        type: "text",
+        text: updated ? `已修改為 $${newAmount}` : "此筆紀錄已不存在",
+      });
+      break;
+    }
+    case "confirm_user": {
+      if (!isGroup || !groupId) break;
+      const parentCheck = await isParent(userId, groupId);
+      if (!parentCheck) {
+        replyMessages.push({ type: "text", text: notParentReply() });
+        break;
+      }
+      const targetUserId = params.get("userId") || "";
+      const cnt = await confirmExpensesByUser(targetUserId, groupId);
+      replyMessages.push({
+        type: "text",
+        text: cnt > 0
+          ? `已確認 ${cnt} 筆支出\n孩子請輸入「收到」確認收款`
+          : "沒有需要確認的支出",
+      });
+      break;
+    }
+    case "confirm_all": {
+      if (!isGroup || !groupId) break;
+      const parentCheck = await isParent(userId, groupId);
+      if (!parentCheck) {
+        replyMessages.push({ type: "text", text: notParentReply() });
+        break;
+      }
+      const cnt = await confirmExpenses(groupId);
+      replyMessages.push({ type: "text", text: confirmReply(cnt) });
+      break;
+    }
+    default:
+      return;
+  }
+
+  if (replyMessages.length === 0) return;
+  attachQuickReply(replyMessages, isGroup);
+  await safeReply(client, replyToken, replyMessages);
+}
+
+// ─── Main Event Handler ───
 
 export async function handleEvent(
   event: WebhookEvent,
@@ -131,32 +285,29 @@ export async function handleEvent(
     return;
   }
 
+  // postback 事件
+  if (event.type === "postback") {
+    await handlePostback(event, client);
+    return;
+  }
+
   if (event.type !== "message" || event.message.type !== "text") {
     return;
   }
 
   const msg = event as MessageEvent;
   const textMessage = msg.message as TextEventMessage;
-  const userId = msg.source.userId;
+  const { userId, isGroup, groupId } = getSourceInfo(msg);
   if (!userId) return;
 
   const replyToken = msg.replyToken;
-  const isGroup =
-    msg.source.type === "group" || msg.source.type === "room";
-  const groupId =
-    msg.source.type === "group"
-      ? msg.source.groupId
-      : msg.source.type === "room"
-        ? msg.source.roomId
-        : undefined;
-
   const parsed = parseMessage(textMessage.text);
   const replyMessages: messagingApi.Message[] = [];
 
   switch (parsed.type) {
     case "expense": {
       const displayName = await getDisplayName(client, userId, groupId);
-      await createExpense(
+      const expense = await createExpense(
         userId,
         parsed.amount,
         parsed.category,
@@ -164,11 +315,26 @@ export async function handleEvent(
         displayName,
         groupId
       );
+      replyMessages.push(buildExpenseCreatedFlex(expense));
+      break;
+    }
+    case "amount_only": {
+      const categoryButtons: QuickReplyItem[] = CATEGORIES.map((cat) => ({
+        type: "action" as const,
+        action: {
+          type: "postback" as const,
+          label: cat,
+          data: `action=select_category&amount=${parsed.amount}&category=${encodeURIComponent(cat)}`,
+          displayText: `${parsed.amount} ${cat}`,
+        },
+      }));
       replyMessages.push({
         type: "text",
-        text: expenseCreatedReply(parsed.amount, parsed.category, parsed.note),
+        text: `金額 $${parsed.amount}，請選擇分類：`,
+        quickReply: { items: categoryButtons },
       });
-      break;
+      await safeReply(client, replyToken, replyMessages);
+      return; // 提前 return，使用自訂 quickReply
     }
     case "query": {
       const { start, end } = PERIOD_RANGE_MAP[parsed.period]();
@@ -283,7 +449,12 @@ export async function handleEvent(
         break;
       }
       const expenses = await getUnconfirmedExpenses(groupId);
-      replyMessages.push({ type: "text", text: settleReply(expenses) });
+      const flexMsg = buildSettleFlex(expenses, groupId);
+      if (flexMsg) {
+        replyMessages.push(flexMsg);
+      } else {
+        replyMessages.push({ type: "text", text: "目前沒有未確認的支出" });
+      }
       break;
     }
     case "confirm": {
@@ -317,12 +488,6 @@ export async function handleEvent(
     }
   }
 
-  // 為最後一則文字訊息加上 quickReply
-  const lastTextIdx = replyMessages.map((m) => m.type).lastIndexOf("text");
-  if (lastTextIdx >= 0) {
-    const lastMsg = replyMessages[lastTextIdx] as messagingApi.TextMessage;
-    lastMsg.quickReply = { items: getQuickReplyItems(isGroup) };
-  }
-
+  attachQuickReply(replyMessages, isGroup);
   await safeReply(client, replyToken, replyMessages);
 }

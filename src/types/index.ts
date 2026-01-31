@@ -58,12 +58,18 @@ export type ParsedStats = {
   category?: Category;
 };
 
+export type ParsedAmountOnly = {
+  type: "amount_only";
+  amount: number;
+};
+
 export type ParsedUnknown = {
   type: "unknown";
 };
 
 export type ParseResult =
   | ParsedExpense
+  | ParsedAmountOnly
   | ParsedQuery
   | ParsedDelete
   | ParsedBind

@@ -26,10 +26,8 @@ describe("parseMessage", () => {
   it("解析純數字「100」", () => {
     const result = parseMessage("100");
     expect(result).toEqual({
-      type: "expense",
+      type: "amount_only",
       amount: 100,
-      category: "其他",
-      note: "",
     });
   });
 
@@ -69,10 +67,8 @@ describe("parseMessage", () => {
   it("金額 1 是允許的最小值", () => {
     const result = parseMessage("1");
     expect(result).toEqual({
-      type: "expense",
+      type: "amount_only",
       amount: 1,
-      category: "其他",
-      note: "",
     });
   });
 
