@@ -16,8 +16,6 @@ const QUERY_MAP: Record<string, "today" | "week" | "month"> = {
   這個月: "month",
 };
 
-const DELETE_KEYWORDS = ["刪除"];
-
 const BIND_ROLE_MAP: Record<string, "parent" | "child"> = {
   家長: "parent",
   媽媽: "parent",
@@ -70,17 +68,50 @@ export function parseMessage(text: string): ParseResult {
     }
   }
 
-  // 刪除指令
-  if (DELETE_KEYWORDS.includes(trimmed)) {
+  // 刪除指令: "刪除" / "刪除 #3" / "刪除 午餐"
+  const deleteMatch = trimmed.match(/^刪除(?:\s+(.+))?$/);
+  if (deleteMatch) {
+    const arg = deleteMatch[1]?.trim();
+    if (!arg) return { type: "delete" };
+    const indexMatch = arg.match(/^#(\d+)$/);
+    if (indexMatch) {
+      return { type: "delete", index: parseInt(indexMatch[1], 10) };
+    }
+    const cat = CATEGORIES.find((c) => c === arg);
+    if (cat) {
+      return { type: "delete", category: cat };
+    }
     return { type: "delete" };
   }
 
-  // 修改/編輯指令: "修改 80" 或 "編輯 80"
-  const editMatch = trimmed.match(/^(?:修改|編輯)\s+(\d+)$/);
+  // 修改/編輯指令: "修改 80" / "修改 #3 80" / "修改 午餐 80"
+  const editMatch = trimmed.match(/^(?:修改|編輯)\s+(.+)$/);
   if (editMatch) {
-    const amount = parseInt(editMatch[1], 10);
-    if (validateAmount(amount)) {
-      return { type: "edit", amount };
+    const arg = editMatch[1].trim();
+    // "修改 #3 80"
+    const indexEditMatch = arg.match(/^#(\d+)\s+(\d+)$/);
+    if (indexEditMatch) {
+      const amount = parseInt(indexEditMatch[2], 10);
+      if (validateAmount(amount)) {
+        return { type: "edit", amount, index: parseInt(indexEditMatch[1], 10) };
+      }
+    }
+    // "修改 午餐 80"
+    const catEditMatch = arg.match(/^(\S+)\s+(\d+)$/);
+    if (catEditMatch) {
+      const cat = CATEGORIES.find((c) => c === catEditMatch[1]);
+      const amount = parseInt(catEditMatch[2], 10);
+      if (cat && validateAmount(amount)) {
+        return { type: "edit", amount, category: cat };
+      }
+    }
+    // "修改 80"
+    const simpleMatch = arg.match(/^(\d+)$/);
+    if (simpleMatch) {
+      const amount = parseInt(simpleMatch[1], 10);
+      if (validateAmount(amount)) {
+        return { type: "edit", amount };
+      }
     }
   }
 

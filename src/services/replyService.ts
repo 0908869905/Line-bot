@@ -34,23 +34,25 @@ export function querySummaryReply(
   lines.push(`────────────`);
   lines.push(`總計：$${total}（${expenses.length} 筆）`);
 
-  // 明細
+  // 明細（加編號供刪除/修改使用）
   lines.push("", "明細：");
-  for (const e of expenses) {
+  for (let i = 0; i < expenses.length; i++) {
+    const e = expenses[i];
     const date = formatDate(e.createdAt);
     const notePart = e.note ? ` (${e.note})` : "";
-    lines.push(`  ${date} ${e.category} $${e.amount}${notePart}`);
+    lines.push(`  #${i + 1}  ${date} ${e.category} $${e.amount}${notePart}`);
   }
 
   return lines.join("\n");
 }
 
-export function deleteReply(expense: Expense | null): string {
+export function deleteReply(expense: Expense | null, label?: string): string {
   if (!expense) {
     return "沒有可刪除的紀錄";
   }
   const notePart = expense.note ? ` (${expense.note})` : "";
-  return `已刪除最後一筆：${expense.category} $${expense.amount}${notePart}`;
+  const target = label || "最後一筆";
+  return `已刪除${target}：${expense.category} $${expense.amount}${notePart}`;
 }
 
 export function bindReply(role: "parent" | "child", displayName: string): string {
@@ -116,11 +118,16 @@ export function receiveReply(count: number): string {
   return `已確認收到 ${count} 筆款項`;
 }
 
-export function editReply(expense: Expense | null, newAmount: number): string {
+export function editReply(
+  expense: Expense | null,
+  newAmount: number,
+  label?: string
+): string {
   if (!expense) {
     return "沒有可修改的紀錄";
   }
-  return `已修改最後一筆：${expense.category} $${expense.amount}（原金額 → $${newAmount}）`;
+  const target = label || "最後一筆";
+  return `已修改${target}：${expense.category} $${expense.amount} → $${newAmount}`;
 }
 
 export function statsReply(
@@ -179,8 +186,13 @@ export function helpReply(): string {
     "",
     "修改：",
     "  修改 80 → 改最後一筆金額為 80",
+    "  修改 #3 80 → 改第 3 筆金額為 80",
+    "  修改 午餐 80 → 改最近一筆午餐為 80",
     "",
-    "刪除：輸入「刪除」移除最後一筆",
+    "刪除：",
+    "  刪除 → 刪除最後一筆",
+    "  刪除 #3 → 刪除第 3 筆",
+    "  刪除 午餐 → 刪除最近一筆午餐",
     "",
     "統計：",
     "  統計 → 本月各分類佔比",

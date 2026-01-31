@@ -7,6 +7,10 @@ import {
   queryExpenses,
   deleteLastExpense,
   editLastExpense,
+  deleteExpenseById,
+  editExpenseById,
+  deleteLastExpenseByCategory,
+  editLastExpenseByCategory,
   getCategoryStats,
   bindRole,
   isParent,
@@ -14,6 +18,7 @@ import {
   confirmExpenses,
   markReceived,
 } from "../services/expenseService";
+import { setQueryCache, getFromCache } from "../services/queryCache";
 import {
   expenseCreatedReply,
   querySummaryReply,
@@ -168,6 +173,7 @@ export async function handleEvent(
     case "query": {
       const { start, end } = PERIOD_RANGE_MAP[parsed.period]();
       const expenses = await queryExpenses(userId, start, end);
+      setQueryCache(userId, expenses);
       const flexMsg = buildQueryFlex(PERIOD_LABELS[parsed.period], expenses);
       if (flexMsg) {
         replyMessages.push(flexMsg);
@@ -180,18 +186,68 @@ export async function handleEvent(
       break;
     }
     case "delete": {
-      const deleted = await deleteLastExpense(userId);
-      replyMessages.push({ type: "text", text: deleteReply(deleted) });
+      if (parsed.index) {
+        const cached = getFromCache(userId, parsed.index);
+        if (!cached) {
+          replyMessages.push({
+            type: "text",
+            text: "查無此筆紀錄，請先查詢（今日/本週/本月）再用 #編號 操作",
+          });
+          break;
+        }
+        const deleted = await deleteExpenseById(cached.id, userId);
+        replyMessages.push({
+          type: "text",
+          text: deleteReply(deleted, `#${parsed.index}`),
+        });
+      } else if (parsed.category) {
+        const deleted = await deleteLastExpenseByCategory(userId, parsed.category);
+        replyMessages.push({
+          type: "text",
+          text: deleteReply(deleted, `最近一筆${parsed.category}`),
+        });
+      } else {
+        const deleted = await deleteLastExpense(userId);
+        replyMessages.push({ type: "text", text: deleteReply(deleted) });
+      }
       break;
     }
     case "edit": {
-      const oldExpense = await queryExpenses(userId, new Date(0), new Date());
-      const lastExpense = oldExpense.length > 0 ? oldExpense[oldExpense.length - 1] : null;
-      const updated = await editLastExpense(userId, parsed.amount);
-      replyMessages.push({
-        type: "text",
-        text: editReply(lastExpense, updated ? parsed.amount : 0),
-      });
+      if (parsed.index) {
+        const cached = getFromCache(userId, parsed.index);
+        if (!cached) {
+          replyMessages.push({
+            type: "text",
+            text: "查無此筆紀錄，請先查詢（今日/本週/本月）再用 #編號 操作",
+          });
+          break;
+        }
+        const updated = await editExpenseById(cached.id, userId, parsed.amount);
+        replyMessages.push({
+          type: "text",
+          text: editReply(cached, updated ? parsed.amount : 0, `#${parsed.index}`),
+        });
+      } else if (parsed.category) {
+        const oldExpenses = await queryExpenses(userId, new Date(0), new Date());
+        const catExpense = [...oldExpenses].reverse().find((e) => e.category === parsed.category);
+        const updated = await editLastExpenseByCategory(userId, parsed.category, parsed.amount);
+        replyMessages.push({
+          type: "text",
+          text: editReply(
+            catExpense || null,
+            updated ? parsed.amount : 0,
+            `最近一筆${parsed.category}`
+          ),
+        });
+      } else {
+        const oldExpenses = await queryExpenses(userId, new Date(0), new Date());
+        const lastExpense = oldExpenses.length > 0 ? oldExpenses[oldExpenses.length - 1] : null;
+        const updated = await editLastExpense(userId, parsed.amount);
+        replyMessages.push({
+          type: "text",
+          text: editReply(lastExpense, updated ? parsed.amount : 0),
+        });
+      }
       break;
     }
     case "stats": {

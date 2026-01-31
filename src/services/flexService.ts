@@ -41,7 +41,7 @@ export function buildQueryFlex(
     })
   );
 
-  const detailRows: messagingApi.FlexComponent[] = expenses.slice(0, 10).map((e) => {
+  const detailRows: messagingApi.FlexComponent[] = expenses.slice(0, 10).map((e, i) => {
     const notePart = e.note ? ` ${e.note}` : "";
     return {
       type: "box" as const,
@@ -49,7 +49,7 @@ export function buildQueryFlex(
       contents: [
         {
           type: "text" as const,
-          text: `${formatDate(e.createdAt)} ${e.category}${notePart}`,
+          text: `#${i + 1} ${formatDate(e.createdAt)} ${e.category}${notePart}`,
           size: "xs" as const,
           color: "#aaaaaa",
           flex: 4,

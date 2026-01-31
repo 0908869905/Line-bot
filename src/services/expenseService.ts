@@ -93,6 +93,77 @@ export async function editLastExpense(lineUserId: string, newAmount: number) {
   });
 }
 
+export async function deleteExpenseById(expenseId: number, lineUserId: string) {
+  const user = await prisma.user.findUnique({ where: { lineUserId } });
+  if (!user) return null;
+
+  const expense = await prisma.expense.findFirst({
+    where: { id: expenseId, userId: user.id },
+  });
+  if (!expense) return null;
+
+  await prisma.expense.delete({ where: { id: expenseId } });
+  return expense;
+}
+
+export async function editExpenseById(
+  expenseId: number,
+  lineUserId: string,
+  newAmount: number
+) {
+  const user = await prisma.user.findUnique({ where: { lineUserId } });
+  if (!user) return null;
+
+  const expense = await prisma.expense.findFirst({
+    where: { id: expenseId, userId: user.id },
+  });
+  if (!expense) return null;
+
+  return prisma.expense.update({
+    where: { id: expenseId },
+    data: { amount: newAmount },
+  });
+}
+
+export async function deleteLastExpenseByCategory(
+  lineUserId: string,
+  category: string
+) {
+  const user = await prisma.user.findUnique({ where: { lineUserId } });
+  if (!user) return null;
+
+  return prisma.$transaction(async (tx) => {
+    const last = await tx.expense.findFirst({
+      where: { userId: user.id, category },
+      orderBy: { createdAt: "desc" },
+    });
+    if (!last) return null;
+    await tx.expense.delete({ where: { id: last.id } });
+    return last;
+  });
+}
+
+export async function editLastExpenseByCategory(
+  lineUserId: string,
+  category: string,
+  newAmount: number
+) {
+  const user = await prisma.user.findUnique({ where: { lineUserId } });
+  if (!user) return null;
+
+  return prisma.$transaction(async (tx) => {
+    const last = await tx.expense.findFirst({
+      where: { userId: user.id, category },
+      orderBy: { createdAt: "desc" },
+    });
+    if (!last) return null;
+    return tx.expense.update({
+      where: { id: last.id },
+      data: { amount: newAmount },
+    });
+  });
+}
+
 export async function getCategoryStats(
   lineUserId: string,
   start: Date,

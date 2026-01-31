@@ -94,6 +94,22 @@ describe("parseMessage", () => {
     expect(parseMessage("刪除")).toEqual({ type: "delete" });
   });
 
+  it("解析「刪除 #3」", () => {
+    expect(parseMessage("刪除 #3")).toEqual({ type: "delete", index: 3 });
+  });
+
+  it("解析「刪除 午餐」", () => {
+    expect(parseMessage("刪除 午餐")).toEqual({ type: "delete", category: "午餐" });
+  });
+
+  it("解析「刪除 飲料」", () => {
+    expect(parseMessage("刪除 飲料")).toEqual({ type: "delete", category: "飲料" });
+  });
+
+  it("刪除不存在的分類回傳普通刪除", () => {
+    expect(parseMessage("刪除 不存在")).toEqual({ type: "delete" });
+  });
+
   // 綁定
   it("解析「綁定 家長」", () => {
     expect(parseMessage("綁定 家長")).toEqual({ type: "bind", role: "parent" });
@@ -127,6 +143,22 @@ describe("parseMessage", () => {
 
   it("解析「編輯 150」", () => {
     expect(parseMessage("編輯 150")).toEqual({ type: "edit", amount: 150 });
+  });
+
+  it("解析「修改 #3 80」", () => {
+    expect(parseMessage("修改 #3 80")).toEqual({ type: "edit", amount: 80, index: 3 });
+  });
+
+  it("解析「修改 午餐 80」", () => {
+    expect(parseMessage("修改 午餐 80")).toEqual({ type: "edit", amount: 80, category: "午餐" });
+  });
+
+  it("解析「編輯 #1 200」", () => {
+    expect(parseMessage("編輯 #1 200")).toEqual({ type: "edit", amount: 200, index: 1 });
+  });
+
+  it("解析「修改 飲料 50」", () => {
+    expect(parseMessage("修改 飲料 50")).toEqual({ type: "edit", amount: 50, category: "飲料" });
   });
 
   it("修改金額超過上限回傳 unknown", () => {

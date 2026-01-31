@@ -24,6 +24,8 @@ export type ParsedQuery = {
 
 export type ParsedDelete = {
   type: "delete";
+  index?: number;
+  category?: Category;
 };
 
 export type ParsedBind = {
@@ -47,6 +49,8 @@ export type ParsedReceive = {
 export type ParsedEdit = {
   type: "edit";
   amount: number;
+  index?: number;
+  category?: Category;
 };
 
 export type ParsedStats = {
